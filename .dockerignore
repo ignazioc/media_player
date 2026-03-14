@@ -5,7 +5,6 @@ data/
 thumbs/
 library/
 docs/
-scripts/
 .git/
 .env
 .env.*
