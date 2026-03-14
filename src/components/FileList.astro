@@ -11,8 +11,11 @@ interface Props {
   items: Item[];
   currentPath: string;
   libraryRoot: string;
+  page: number;
+  totalPages: number;
+  browseBase: string;
 }
-const { items, currentPath, libraryRoot } = Astro.props;
+const { items, currentPath, libraryRoot, page, totalPages, browseBase } = Astro.props;
 
 import path from 'node:path';
 import fs from 'node:fs';
@@ -66,7 +69,7 @@ const thumbSrc = (filePath: string) => {
           <a class="browse-card" href={`/browse?path=${encodeURIComponent(item.path)}`}>
             <div class="browse-card-media">
               {posterSrc
-                ? <img src={posterSrc} alt="" class="browse-card-img" />
+                ? <img src={posterSrc} alt="" class="browse-card-img" loading="lazy" />
                 : <span class="browse-card-placeholder">📁</span>
               }
             </div>
@@ -95,7 +98,7 @@ const thumbSrc = (filePath: string) => {
           <a class="browse-card" href={`/watch?path=${encodeURIComponent(item.path)}`}>
             <div class="browse-card-media">
               {thumbSrc(item.path)
-                ? <img src={thumbSrc(item.path)!} alt="" class="browse-card-img" />
+                ? <img src={thumbSrc(item.path)!} alt="" class="browse-card-img" loading="lazy" />
                 : <span class="browse-card-placeholder">▶</span>
               }
               {percent > 0 && (
@@ -119,6 +122,20 @@ const thumbSrc = (filePath: string) => {
     }
   })}
 </div>
+
+{totalPages > 1 && (
+  <nav class="pagination">
+    {page > 1
+      ? <a class="pagination-btn" href={`${browseBase}&page=${page - 1}`}>← Prev</a>
+      : <span class="pagination-btn pagination-btn-disabled">← Prev</span>
+    }
+    <span class="pagination-info">Page {page} of {totalPages}</span>
+    {page < totalPages
+      ? <a class="pagination-btn" href={`${browseBase}&page=${page + 1}`}>Next →</a>
+      : <span class="pagination-btn pagination-btn-disabled">Next →</span>
+    }
+  </nav>
+)}
 
 <script>
   document.querySelectorAll<HTMLButtonElement>('.browse-card-star').forEach(btn => {

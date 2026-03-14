@@ -13,12 +13,16 @@ const dirPath = path.resolve(requested);
 // Redirect attempts to escape the library root back to its root
 const safePath = dirPath.startsWith(LIBRARY_ROOT) ? dirPath : LIBRARY_ROOT;
 
+const PAGE_SIZE = 100;
+const page = Math.max(1, parseInt(Astro.url.searchParams.get('page') ?? '1', 10));
+
+let allItems: { name: string; path: string; type: 'directory' | 'file'; ext: string }[] = [];
 let items: { name: string; path: string; type: 'directory' | 'file'; ext: string }[] = [];
 let error = '';
 
 try {
   const entries = fs.readdirSync(safePath, { withFileTypes: true });
-  items = entries
+  allItems = entries
     .filter(e => !e.name.startsWith('.') && (e.isDirectory() || VIDEO_EXTS.has(path.extname(e.name).toLowerCase())))
     .map(e => ({
       name: e.name,
@@ -30,9 +34,13 @@ try {
       if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
       return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
+  items = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 } catch {
   error = `Cannot read directory: ${safePath}`;
 }
+
+const totalPages = Math.ceil(allItems.length / PAGE_SIZE);
+const browseBase = `/browse?path=${encodeURIComponent(safePath)}`;
 
 // Build breadcrumb relative to LIBRARY_ROOT
 const relative = path.relative(LIBRARY_ROOT, safePath);
@@ -62,5 +70,5 @@ const isAtRoot = safePath === LIBRARY_ROOT;
 
   {error && <p class="error-msg">{error}</p>}
 
-  <FileList items={items} currentPath={safePath} libraryRoot={LIBRARY_ROOT} />
+  <FileList items={items} currentPath={safePath} libraryRoot={LIBRARY_ROOT} page={page} totalPages={totalPages} browseBase={browseBase} />
 </Layout>

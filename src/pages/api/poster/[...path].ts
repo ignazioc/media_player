@@ -19,6 +19,9 @@ export const GET: APIRoute = ({ params }) => {
   }
 
   return new Response(data, {
-    headers: { 'Content-Type': 'image/png' },
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+    },
   });
 };
