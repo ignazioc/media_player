@@ -1,0 +1,149 @@
+---
+import { getBookmarks, getProgress } from '../lib/db';
+
+interface Item {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  ext: string;
+}
+interface Props {
+  items: Item[];
+  currentPath: string;
+  libraryRoot: string;
+}
+const { items, currentPath, libraryRoot } = Astro.props;
+
+import path from 'node:path';
+import fs from 'node:fs';
+
+const isAtRoot = currentPath === libraryRoot;
+const parentPath = isAtRoot ? null : path.dirname(currentPath);
+
+// Watch progress for video files
+const filePaths = items.filter(i => i.type === 'file').map(i => i.path);
+const progressMap: Record<string, { position_sec: number; duration_sec: number }> = {};
+for (const fp of filePaths) {
+  const p = getProgress(fp);
+  if (p) progressMap[fp] = p;
+}
+
+// Bookmarks
+const existingBookmarks = new Set<string>(getBookmarks().map(b => b.path));
+
+const hasPoster = (dirPath: string) => fs.existsSync(path.join(dirPath, 'poster.png'));
+
+const THUMBS_ROOT = path.resolve(process.cwd(), 'thumbs');
+const thumbSrc = (filePath: string) => {
+  const rel = path.relative(libraryRoot, filePath);
+  const thumbAbs = path.join(THUMBS_ROOT, rel.replace(/\.[^.]+$/, '.jpg'));
+  return fs.existsSync(thumbAbs) ? `/api/thumb/${rel.replace(/\.[^.]+$/, '')}` : null;
+};
+---
+
+{items.length === 0 && !parentPath && (
+  <p class="empty-note">This folder is empty.</p>
+)}
+
+<div class="browse-grid">
+  {parentPath !== null && (
+    <a class="browse-card browse-card-up" href={`/browse?path=${encodeURIComponent(parentPath)}`}>
+      <div class="browse-card-media browse-card-up-media">
+        <span class="up-arrow">↑</span>
+      </div>
+      <div class="browse-card-info">
+        <span class="browse-card-name">..</span>
+      </div>
+    </a>
+  )}
+
+  {items.map(item => {
+    if (item.type === 'directory') {
+      const isBookmarked = existingBookmarks.has(item.path);
+      const posterSrc = hasPoster(item.path) ? `/api/poster${item.path}` : null;
+      return (
+        <div class="browse-card-wrapper">
+          <a class="browse-card" href={`/browse?path=${encodeURIComponent(item.path)}`}>
+            <div class="browse-card-media">
+              {posterSrc
+                ? <img src={posterSrc} alt="" class="browse-card-img" />
+                : <span class="browse-card-placeholder">📁</span>
+              }
+            </div>
+            <div class="browse-card-info">
+              <span class="browse-card-name" title={item.name}>{item.name}</span>
+            </div>
+          </a>
+          <button
+            class={`browse-card-star ${isBookmarked ? 'bookmarked' : ''}`}
+            data-path={item.path}
+            data-label={item.name}
+            data-bookmarked={isBookmarked ? 'true' : 'false'}
+            title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+          >
+            {isBookmarked ? '★' : '☆'}
+          </button>
+        </div>
+      );
+    } else {
+      const prog = progressMap[item.path];
+      const percent = prog && prog.duration_sec > 0
+        ? Math.round((prog.position_sec / prog.duration_sec) * 100)
+        : 0;
+      return (
+        <div class="browse-card-wrapper">
+          <a class="browse-card" href={`/watch?path=${encodeURIComponent(item.path)}`}>
+            <div class="browse-card-media">
+              {thumbSrc(item.path)
+                ? <img src={thumbSrc(item.path)!} alt="" class="browse-card-img" />
+                : <span class="browse-card-placeholder">▶</span>
+              }
+              {percent > 0 && (
+                <div class="browse-card-progress">
+                  <div class="browse-card-progress-fill" style={`width:${percent}%`}></div>
+                </div>
+              )}
+            </div>
+            <div class="browse-card-info">
+              <span class="browse-card-name" title={item.name}>{item.name}</span>
+              {percent > 0 && percent < 95 && (
+                <span class="browse-card-pct">{percent}%</span>
+              )}
+              {percent >= 95 && (
+                <span class="browse-card-pct browse-card-done">✓</span>
+              )}
+            </div>
+          </a>
+        </div>
+      );
+    }
+  })}
+</div>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.browse-card-star').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.path!;
+      const label = btn.dataset.label!;
+      const isBookmarked = btn.dataset.bookmarked === 'true';
+
+      if (isBookmarked) {
+        await fetch(`/api/bookmarks?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+        btn.textContent = '☆';
+        btn.dataset.bookmarked = 'false';
+        btn.classList.remove('bookmarked');
+        btn.title = 'Add bookmark';
+      } else {
+        await fetch('/api/bookmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: p, label }),
+        });
+        btn.textContent = '★';
+        btn.dataset.bookmarked = 'true';
+        btn.classList.add('bookmarked');
+        btn.title = 'Remove bookmark';
+      }
+    });
+  });
+</script>

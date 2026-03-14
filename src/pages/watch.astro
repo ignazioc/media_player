@@ -1,0 +1,22 @@
+---
+import Layout from '../components/Layout.astro';
+import VideoPlayer from '../components/VideoPlayer.astro';
+import path from 'node:path';
+
+const filePath = Astro.url.searchParams.get('path') ?? '';
+const title = path.basename(filePath);
+const parentPath = path.dirname(filePath);
+
+// Video src uses the [...path] catch-all route (strip leading slash)
+const videoSrc = `/api/video${filePath}`;
+---
+
+<Layout title={title}>
+  <div class="watch-page">
+    <VideoPlayer src={videoSrc} filePath={filePath} parentPath={parentPath} />
+    <div class="video-info">
+      <h2 class="video-title">{title}</h2>
+      <p class="video-path">{filePath}</p>
+    </div>
+  </div>
+</Layout>

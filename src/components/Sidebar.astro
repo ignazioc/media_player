@@ -1,0 +1,12 @@
+---
+const currentPath = Astro.url.pathname;
+---
+<header class="topbar">
+  <a href="/" class="logo">▶ Media Player</a>
+
+  <nav class="pill-nav">
+    <a href="/" class={`pill-link ${currentPath === '/' ? 'active' : ''}`}>Home</a>
+    <a href="/browse" class={`pill-link ${currentPath === '/browse' ? 'active' : ''}`}>Browse</a>
+    <a href="/bookmarks" class={`pill-link ${currentPath === '/bookmarks' ? 'active' : ''}`}>Bookmarks</a>
+  </nav>
+</header>

@@ -1,0 +1,39 @@
+---
+import Layout from '../components/Layout.astro';
+import ContinueWatching from '../components/ContinueWatching.astro';
+import { getRecentProgress, getBookmarks } from '../lib/db';
+import path from 'node:path';
+
+const rows = getRecentProgress(20);
+const recent = rows.map(r => ({
+  ...r,
+  label: path.basename(r.file_path),
+  percent: Math.round((r.position_sec / r.duration_sec) * 100),
+}));
+
+const bookmarks = getBookmarks();
+---
+
+<Layout title="Home">
+  <section class="page-section">
+    <h2 class="section-heading">Continue Watching</h2>
+    <ContinueWatching items={recent} />
+  </section>
+
+  {bookmarks.length > 0 && (
+    <section class="page-section">
+      <h2 class="section-heading">Bookmarks</h2>
+      <div class="cards-grid">
+        {bookmarks.map(b => (
+          <a class="card card-folder" href={`/browse?path=${encodeURIComponent(b.path)}`}>
+            <div class="card-icon">📁</div>
+            <div class="card-body">
+              <div class="card-title">{b.label}</div>
+              <div class="card-meta card-path">{b.path}</div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+  )}
+</Layout>

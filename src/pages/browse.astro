@@ -1,0 +1,66 @@
+---
+import Layout from '../components/Layout.astro';
+import FileList from '../components/FileList.astro';
+import fs from 'node:fs';
+import path from 'node:path';
+import { LIBRARY_ROOT } from '../lib/db';
+
+const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.flv', '.ts', '.wmv']);
+
+const requested = Astro.url.searchParams.get('path') ?? LIBRARY_ROOT;
+const dirPath = path.resolve(requested);
+
+// Redirect attempts to escape the library root back to its root
+const safePath = dirPath.startsWith(LIBRARY_ROOT) ? dirPath : LIBRARY_ROOT;
+
+let items: { name: string; path: string; type: 'directory' | 'file'; ext: string }[] = [];
+let error = '';
+
+try {
+  const entries = fs.readdirSync(safePath, { withFileTypes: true });
+  items = entries
+    .filter(e => !e.name.startsWith('.') && (e.isDirectory() || VIDEO_EXTS.has(path.extname(e.name).toLowerCase())))
+    .map(e => ({
+      name: e.name,
+      path: path.join(safePath, e.name),
+      type: (e.isDirectory() ? 'directory' : 'file') as 'directory' | 'file',
+      ext: path.extname(e.name).toLowerCase(),
+    }))
+    .sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+} catch {
+  error = `Cannot read directory: ${safePath}`;
+}
+
+// Build breadcrumb relative to LIBRARY_ROOT
+const relative = path.relative(LIBRARY_ROOT, safePath);
+const relParts = relative ? relative.split(path.sep) : [];
+const breadcrumbs = relParts.map((part, i) => ({
+  label: part,
+  path: path.join(LIBRARY_ROOT, ...relParts.slice(0, i + 1)),
+}));
+const isAtRoot = safePath === LIBRARY_ROOT;
+---
+
+<Layout title={isAtRoot ? 'Library' : `Browse: ${path.basename(safePath)}`}>
+  <div class="page-header">
+    <nav class="breadcrumb">
+      <a href="/browse" class="breadcrumb-item">Library</a>
+      {breadcrumbs.map((crumb, i) => (
+        <>
+          <span class="breadcrumb-sep">›</span>
+          {i < breadcrumbs.length - 1
+            ? <a href={`/browse?path=${encodeURIComponent(crumb.path)}`} class="breadcrumb-item">{crumb.label}</a>
+            : <span class="breadcrumb-item breadcrumb-current">{crumb.label}</span>
+          }
+        </>
+      ))}
+    </nav>
+  </div>
+
+  {error && <p class="error-msg">{error}</p>}
+
+  <FileList items={items} currentPath={safePath} libraryRoot={LIBRARY_ROOT} />
+</Layout>

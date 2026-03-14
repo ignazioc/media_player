@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Astro generated
+.astro/
+
+# App data (runtime, not committed)
+data/
+thumbs/
+
+# Library contents — videos and generated posters are not committed.
+# Remove these lines if you want to track poster.png files in git.
+library/*/
+library/**
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db

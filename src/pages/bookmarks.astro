@@ -1,0 +1,58 @@
+---
+import Layout from '../components/Layout.astro';
+import { getBookmarks } from '../lib/db';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const bookmarks = getBookmarks();
+const hasPoster = (dirPath: string) => fs.existsSync(path.join(dirPath, 'poster.png'));
+---
+
+<Layout title="Bookmarks">
+  <div class="page-header">
+    <h2 class="section-heading">Bookmarks</h2>
+  </div>
+
+  {bookmarks.length === 0 && (
+    <div class="empty-state">
+      <p>No bookmarks yet.</p>
+      <a href="/browse" class="btn">Browse files →</a>
+    </div>
+  )}
+
+  <div class="browse-grid">
+    {bookmarks.map(b => {
+      const posterSrc = hasPoster(b.path) ? `/api/poster${b.path}` : null;
+      return (
+        <div class="browse-card-wrapper">
+          <a class="browse-card" href={`/browse?path=${encodeURIComponent(b.path)}`}>
+            <div class="browse-card-media">
+              {posterSrc
+                ? <img src={posterSrc} alt="" class="browse-card-img" />
+                : <span class="browse-card-placeholder">📁</span>
+              }
+            </div>
+            <div class="browse-card-info">
+              <span class="browse-card-name" title={b.path}>{b.label}</span>
+            </div>
+          </a>
+          <button
+            class="browse-card-star bookmarked"
+            data-path={b.path}
+            title="Remove bookmark"
+          >★</button>
+        </div>
+      );
+    })}
+  </div>
+</Layout>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.browse-card-star').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.path!;
+      await fetch(`/api/bookmarks?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+      btn.closest<HTMLDivElement>('.browse-card-wrapper')?.remove();
+    });
+  });
+</script>

@@ -1,0 +1,87 @@
+---
+interface Props {
+  src: string;
+  filePath: string;
+  parentPath?: string;
+}
+const { src, filePath, parentPath } = Astro.props;
+---
+
+<div class="player-wrapper">
+  {parentPath && (
+    <a href={`/browse?path=${encodeURIComponent(parentPath)}`} class="back-link">← Back</a>
+  )}
+  <video
+    id="main-video"
+    controls
+    preload="metadata"
+    data-file-path={filePath}
+  >
+    <source src={src} />
+    Your browser does not support HTML5 video.
+  </video>
+</div>
+
+<script>
+  const video = document.getElementById('main-video') as HTMLVideoElement;
+  const filePath = video.dataset.filePath!;
+
+  // Restore saved position
+  video.addEventListener('loadedmetadata', async () => {
+    try {
+      const res = await fetch(`/api/progress?path=${encodeURIComponent(filePath)}`);
+      const data = await res.json();
+      if (data && data.position_sec > 0 && data.duration_sec > 0) {
+        const pct = data.position_sec / data.duration_sec;
+        if (pct < 0.95) {
+          video.currentTime = data.position_sec;
+        }
+      }
+    } catch {
+      // best-effort; silently ignore
+    }
+  });
+
+  // Save progress
+  function saveProgress() {
+    if (!video.duration || video.currentTime <= 0) return;
+    const payload = JSON.stringify({
+      file_path: filePath,
+      position_sec: video.currentTime,
+      duration_sec: video.duration,
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/progress', new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }
+
+  let saveTimer: ReturnType<typeof setInterval> | null = null;
+
+  video.addEventListener('play', () => {
+    if (saveTimer) clearInterval(saveTimer);
+    saveTimer = setInterval(saveProgress, 5000);
+  });
+
+  video.addEventListener('pause', () => {
+    saveProgress();
+    if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
+  });
+
+  video.addEventListener('ended', () => {
+    saveProgress();
+    if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
+  });
+
+  window.addEventListener('beforeunload', saveProgress);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveProgress();
+  });
+</script>

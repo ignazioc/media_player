@@ -1,0 +1,55 @@
+---
+interface Item {
+  file_path: string;
+  label: string;
+  position_sec: number;
+  duration_sec: number;
+  percent: number;
+}
+interface Props { items: Item[]; }
+const { items } = Astro.props;
+---
+
+{items.length === 0 && (
+  <div class="empty-state">
+    <p>Nothing in progress yet.</p>
+    <a href="/browse" class="btn">Browse files →</a>
+  </div>
+)}
+
+<div class="cards-grid">
+  {items.map(item => {
+    const minutes = Math.floor(item.position_sec / 60);
+    const seconds = Math.floor(item.position_sec % 60);
+    const timeStr = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    return (
+      <div class="card-wrapper">
+        <a class="card" href={`/watch?path=${encodeURIComponent(item.file_path)}`}>
+          <div class="card-icon">🎬</div>
+          <div class="card-body">
+            <div class="card-title" title={item.file_path}>{item.label}</div>
+            <div class="card-meta">{timeStr} · {item.percent}% watched</div>
+          </div>
+          <div class="card-progress">
+            <div class="card-progress-fill" style={`width: ${item.percent}%`}></div>
+          </div>
+        </a>
+        <button
+          class="card-remove"
+          data-path={item.file_path}
+          title="Remove from Continue Watching"
+        >✕</button>
+      </div>
+    );
+  })}
+</div>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.card-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.path!;
+      await fetch(`/api/progress?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+      btn.closest('.card-wrapper')?.remove();
+    });
+  });
+</script>
