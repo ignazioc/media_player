@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.astro/
+data/
+thumbs/
+library/
+docs/
+scripts/
+.git/
+.env
+.env.*
+.DS_Store
+README.md
