@@ -50,7 +50,39 @@ media_player/
     └── styles/global.css
 ```
 
-## Setup
+## Docker
+
+The easiest way to run the media player. The image includes FFmpeg and Python so thumbnail generation works out of the box.
+
+### Quick start
+
+```bash
+# Create the folders Docker will mount
+mkdir -p library thumbs data
+
+# Copy your videos into library/
+# Then start the container
+docker compose up -d
+# → http://localhost:3000
+```
+
+### Generate thumbnails
+
+```bash
+# Thumbnails (one frame per video, stored in thumbs/)
+docker compose exec media-player python3 scripts/generate_thumbnails.py
+
+# Poster images (auto-generated cover art for each folder)
+docker compose exec media-player python3 scripts/generate_posters.py
+```
+
+Re-run these whenever you add new videos. Existing files are skipped automatically.
+
+The `library/`, `thumbs/`, and `data/` directories are mounted from the host, so thumbnails and posters persist across container restarts and image updates.
+
+---
+
+## Manual setup
 
 ### Requirements
 

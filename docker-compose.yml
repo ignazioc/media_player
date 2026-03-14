@@ -1,0 +1,11 @@
+services:
+  media-player:
+    image: ignazioc/media-player:latest
+    # build: .   # uncomment to build locally instead
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./library:/app/library
+      - ./thumbs:/app/thumbs
+      - ./data:/app/data
+    restart: unless-stopped
