@@ -1,0 +1,69 @@
+---
+import Layout from '../components/Layout.astro';
+import fs from 'node:fs';
+import { INDEX_PATH } from './api/scan';
+import type { LibraryIndex } from './api/scan';
+
+let lastScanned: number | null = null;
+let entryCount: number | null = null;
+try {
+  const index: LibraryIndex = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8'));
+  lastScanned = index.scanned_at;
+  entryCount = index.entries.length;
+} catch { /* index doesn't exist yet */ }
+---
+
+<Layout title="Settings">
+  <h1 class="section-heading">Settings</h1>
+
+  <div class="settings-section">
+    <h2 class="settings-section-title">Library Index</h2>
+    <p class="settings-desc">
+      Scan the library to build a folder index used by search. Run this whenever you add new content.
+    </p>
+
+    {lastScanned !== null && (
+      <p class="settings-meta">
+        Last scanned: <strong>{new Date(lastScanned).toLocaleString()}</strong> — {entryCount} items indexed
+      </p>
+    )}
+    {lastScanned === null && (
+      <p class="settings-meta settings-meta-warn">No index found. Search will not work until you scan.</p>
+    )}
+
+    <button class="btn" id="scan-btn">Scan Library</button>
+    <p class="scan-status" id="scan-status"></p>
+  </div>
+</Layout>
+
+<script>
+  const btn = document.getElementById('scan-btn') as HTMLButtonElement;
+  const status = document.getElementById('scan-status')!;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Scanning…';
+    status.textContent = '';
+    status.className = 'scan-status';
+
+    try {
+      const res = await fetch('/api/scan', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        status.textContent = `Done — ${data.count} items indexed. Reload to update the timestamp.`;
+        status.classList.add('scan-status-ok');
+        btn.textContent = 'Scan Library';
+      } else {
+        status.textContent = `Error: ${data.error}`;
+        status.classList.add('scan-status-error');
+        btn.textContent = 'Scan Library';
+      }
+    } catch {
+      status.textContent = 'Request failed.';
+      status.classList.add('scan-status-error');
+      btn.textContent = 'Scan Library';
+    }
+
+    btn.disabled = false;
+  });
+</script>

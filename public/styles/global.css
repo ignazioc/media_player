@@ -235,7 +235,7 @@ a:hover { color: var(--accent-hover); }
 .btn:hover { background: var(--accent-hover); color: #fff; }
 
 /* ---- Browse page ---- */
-.page-header { margin-bottom: 20px; }
+.page-header { margin-bottom: 20px; display: flex; flex-direction: column; gap: 0; }
 
 .breadcrumb {
   display: flex;
@@ -260,6 +260,32 @@ a:hover { color: var(--accent-hover); }
   border-radius: 8px;
   margin-bottom: 16px;
   font-size: 14px;
+}
+
+/* ---- Search ---- */
+.search-form {
+  margin-top: 12px;
+}
+
+.search-input {
+  width: 100%;
+  max-width: 400px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-input::placeholder { color: var(--text-muted); }
+.search-input:focus { border-color: var(--accent); }
+
+.search-result-count {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
 }
 
 /* ---- Browse grid ---- */
@@ -429,6 +455,46 @@ a.pagination-btn:hover { border-color: var(--accent); background: var(--surface2
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ---- Settings page ---- */
+.settings-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 560px;
+}
+
+.settings-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.settings-desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.settings-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.settings-meta-warn {
+  color: #f59e0b;
+}
+
+.scan-status {
+  margin-top: 10px;
+  font-size: 13px;
+  min-height: 1.4em;
+}
+.scan-status-ok { color: var(--success); }
+.scan-status-error { color: #ef4444; }
 
 /* ---- Watch page ---- */
 .watch-page { max-width: 1200px; }

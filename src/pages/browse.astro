@@ -4,8 +4,13 @@ import FileList from '../components/FileList.astro';
 import fs from 'node:fs';
 import path from 'node:path';
 import { LIBRARY_ROOT } from '../lib/db';
+import { INDEX_PATH } from './api/scan';
+import type { LibraryIndex } from './api/scan';
 
-const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.flv', '.ts', '.wmv']);
+type Item = { name: string; path: string; type: 'directory' | 'file'; ext: string };
+
+const q = (Astro.url.searchParams.get('q') ?? '').trim();
+const isSearch = q.length > 0;
 
 const requested = Astro.url.searchParams.get('path') ?? LIBRARY_ROOT;
 const dirPath = path.resolve(requested);
@@ -16,31 +21,38 @@ const safePath = dirPath.startsWith(LIBRARY_ROOT) ? dirPath : LIBRARY_ROOT;
 const PAGE_SIZE = 100;
 const page = Math.max(1, parseInt(Astro.url.searchParams.get('page') ?? '1', 10));
 
-let allItems: { name: string; path: string; type: 'directory' | 'file'; ext: string }[] = [];
-let items: { name: string; path: string; type: 'directory' | 'file'; ext: string }[] = [];
-let error = '';
+let allItems: Item[] = [];
+let items: Item[] = [];
+let indexMissing = false;
 
 try {
-  const entries = fs.readdirSync(safePath, { withFileTypes: true });
-  allItems = entries
-    .filter(e => !e.name.startsWith('.') && (e.isDirectory() || VIDEO_EXTS.has(path.extname(e.name).toLowerCase())))
-    .map(e => ({
-      name: e.name,
-      path: path.join(safePath, e.name),
-      type: (e.isDirectory() ? 'directory' : 'file') as 'directory' | 'file',
-      ext: path.extname(e.name).toLowerCase(),
-    }))
-    .sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-    });
-  items = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const index: LibraryIndex = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8'));
+  if (isSearch) {
+    const qLower = q.toLowerCase();
+    allItems = index.entries
+      .filter(e => e.name.toLowerCase().includes(qLower))
+      .sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+  } else {
+    allItems = index.entries
+      .filter(e => path.dirname(e.path) === safePath)
+      .sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+  }
 } catch {
-  error = `Cannot read directory: ${safePath}`;
+  indexMissing = true;
 }
 
+items = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
 const totalPages = Math.ceil(allItems.length / PAGE_SIZE);
-const browseBase = `/browse?path=${encodeURIComponent(safePath)}`;
+const browseBase = isSearch
+  ? `/browse?q=${encodeURIComponent(q)}`
+  : `/browse?path=${encodeURIComponent(safePath)}`;
 
 // Build breadcrumb relative to LIBRARY_ROOT
 const relative = path.relative(LIBRARY_ROOT, safePath);
@@ -52,11 +64,11 @@ const breadcrumbs = relParts.map((part, i) => ({
 const isAtRoot = safePath === LIBRARY_ROOT;
 ---
 
-<Layout title={isAtRoot ? 'Library' : `Browse: ${path.basename(safePath)}`}>
+<Layout title={isSearch ? `Search: ${q}` : isAtRoot ? 'Library' : `Browse: ${path.basename(safePath)}`}>
   <div class="page-header">
     <nav class="breadcrumb">
       <a href="/browse" class="breadcrumb-item">Library</a>
-      {breadcrumbs.map((crumb, i) => (
+      {!isSearch && breadcrumbs.map((crumb, i) => (
         <>
           <span class="breadcrumb-sep">›</span>
           {i < breadcrumbs.length - 1
@@ -66,9 +78,20 @@ const isAtRoot = safePath === LIBRARY_ROOT;
         </>
       ))}
     </nav>
+    <form class="search-form" action="/browse" method="get">
+      <input class="search-input" type="search" name="q" value={q} placeholder="Search library…" autocomplete="off" />
+      {!isSearch && <input type="hidden" name="path" value={safePath} />}
+    </form>
   </div>
 
-  {error && <p class="error-msg">{error}</p>}
+  {indexMissing && (
+    <p class="search-result-count">Library not scanned yet. Go to <a href="/settings">Settings</a> to scan.</p>
+  )}
+  {isSearch && !indexMissing && (
+    <p class="search-result-count">
+      {allItems.length === 0 ? `No results for "${q}"` : `${allItems.length} result${allItems.length === 1 ? '' : 's'} for "${q}"`}
+    </p>
+  )}
 
-  <FileList items={items} currentPath={safePath} libraryRoot={LIBRARY_ROOT} page={page} totalPages={totalPages} browseBase={browseBase} />
+  <FileList items={items} currentPath={safePath} libraryRoot={LIBRARY_ROOT} page={page} totalPages={totalPages} browseBase={browseBase} isSearch={isSearch} />
 </Layout>

@@ -14,8 +14,9 @@ interface Props {
   page: number;
   totalPages: number;
   browseBase: string;
+  isSearch?: boolean;
 }
-const { items, currentPath, libraryRoot, page, totalPages, browseBase } = Astro.props;
+const { items, currentPath, libraryRoot, page, totalPages, browseBase, isSearch = false } = Astro.props;
 
 import path from 'node:path';
 import fs from 'node:fs';
@@ -49,7 +50,7 @@ const thumbSrc = (filePath: string) => {
 )}
 
 <div class="browse-grid">
-  {parentPath !== null && (
+  {!isSearch && parentPath !== null && (
     <a class="browse-card browse-card-up" href={`/browse?path=${encodeURIComponent(parentPath)}`}>
       <div class="browse-card-media browse-card-up-media">
         <span class="up-arrow">↑</span>
