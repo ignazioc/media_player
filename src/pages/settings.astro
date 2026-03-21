@@ -52,7 +52,8 @@ try {
       const rawText = await res.text();
       try { data = JSON.parse(rawText); } catch { data = null; }
       if (res.ok && data?.ok) {
-        status.textContent = `Done — ${data.count} items indexed. Reload to update the timestamp.`;
+        const courseMsg = data.courses_discovered > 0 ? `, ${data.courses_discovered} new courses registered` : '';
+        status.textContent = `Done — ${data.count} items indexed${courseMsg}. Reload to update the timestamp.`;
         status.classList.add('scan-status-ok');
       } else {
         const errorDetail = data?.error ?? rawText ?? '(no response body)';

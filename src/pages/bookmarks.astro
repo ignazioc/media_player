@@ -25,7 +25,7 @@ const hasPoster = (dirPath: string) => fs.existsSync(path.join(dirPath, 'poster.
       const posterSrc = hasPoster(b.path) ? `/api/poster${b.path}` : null;
       return (
         <div class="browse-card-wrapper">
-          <a class="browse-card" href={`/browse?path=${encodeURIComponent(b.path)}`}>
+          <a class="browse-card" href={`/course?path=${encodeURIComponent(b.path)}`}>
             <div class="browse-card-media">
               {posterSrc
                 ? <img src={posterSrc} alt="" class="browse-card-img" />

@@ -23,16 +23,35 @@ export interface WatchProgress {
   last_watched: number;
 }
 
+export interface CourseFile {
+  name: string;  // filename
+  path: string;  // absolute path
+}
+
+export interface CourseMetadata {
+  // path is the key in the courses record (absolute path to the course folder)
+  title: string;        // display name, defaults to folder name
+  publisher: string;    // parent folder name, e.g. "chess_mood"
+  instructor?: string;  // e.g. "Magnus Carlsen"
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  tags?: string[];      // e.g. ["openings", "endgames"]
+  description?: string;
+  files?: CourseFile[]; // video files in the course, populated by scan
+}
+
 interface Store {
   bookmarks: Bookmark[];
   progress: Record<string, WatchProgress>;
+  courses: Record<string, CourseMetadata>; // keyed by absolute course folder path
 }
 
 function load(): Store {
   try {
-    return JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    if (!store.courses) store.courses = {};
+    return store;
   } catch {
-    return { bookmarks: [], progress: {} };
+    return { bookmarks: [], progress: {}, courses: {} };
   }
 }
 
@@ -99,4 +118,28 @@ export function getRecentProgress(limit: number): (WatchProgress & { file_path: 
     .sort(([, a], [, b]) => b.last_watched - a.last_watched)
     .slice(0, limit)
     .map(([file_path, p]) => ({ file_path, ...p }));
+}
+
+// ---------------------------------------------------------------------------
+// Course metadata
+// ---------------------------------------------------------------------------
+
+export function getCourseMetadata(coursePath: string): CourseMetadata | null {
+  return load().courses[coursePath] ?? null;
+}
+
+export function getAllCourseMetadata(): Record<string, CourseMetadata> {
+  return load().courses;
+}
+
+export function saveCourseMetadata(coursePath: string, meta: CourseMetadata): void {
+  const store = load();
+  store.courses[coursePath] = meta;
+  save(store);
+}
+
+export function removeCourseMetadata(coursePath: string): void {
+  const store = load();
+  delete store.courses[coursePath];
+  save(store);
 }

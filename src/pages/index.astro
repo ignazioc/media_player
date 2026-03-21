@@ -25,7 +25,7 @@ const bookmarks = getBookmarks();
       <h2 class="section-heading">Bookmarks</h2>
       <div class="cards-grid">
         {bookmarks.map(b => (
-          <a class="card card-folder" href={`/browse?path=${encodeURIComponent(b.path)}`}>
+          <a class="card card-folder" href={`/course?path=${encodeURIComponent(b.path)}`}>
             <div class="card-icon">📁</div>
             <div class="card-body">
               <div class="card-title">{b.label}</div>

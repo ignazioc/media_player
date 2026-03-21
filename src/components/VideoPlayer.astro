@@ -9,7 +9,7 @@ const { src, filePath, parentPath } = Astro.props;
 
 <div class="player-wrapper">
   {parentPath && (
-    <a href={`/browse?path=${encodeURIComponent(parentPath)}`} class="back-link">← Back</a>
+    <a href={`/course?path=${encodeURIComponent(parentPath)}`} class="back-link">← Back</a>
   )}
   <video
     id="main-video"

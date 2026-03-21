@@ -1,97 +1,195 @@
 ---
 import Layout from '../components/Layout.astro';
-import FileList from '../components/FileList.astro';
 import fs from 'node:fs';
 import path from 'node:path';
-import { LIBRARY_ROOT } from '../lib/db';
-import { INDEX_PATH } from './api/scan';
-import type { LibraryIndex } from './api/scan';
-
-type Item = { name: string; path: string; type: 'directory' | 'file'; ext: string };
+import { LIBRARY_ROOT, getAllCourseMetadata, getBookmarks, getRecentProgress } from '../lib/db';
 
 const q = (Astro.url.searchParams.get('q') ?? '').trim();
-const isSearch = q.length > 0;
+const publisherFilter = (Astro.url.searchParams.get('publisher') ?? '').trim();
 
-const requested = Astro.url.searchParams.get('path') ?? LIBRARY_ROOT;
-const dirPath = path.resolve(requested);
+// Load all courses
+const coursesMap = getAllCourseMetadata();
+const bookmarkPaths = new Set(getBookmarks().map(b => b.path));
 
-// Redirect attempts to escape the library root back to its root
-const safePath = dirPath.startsWith(LIBRARY_ROOT) ? dirPath : LIBRARY_ROOT;
-
-const PAGE_SIZE = 100;
-const page = Math.max(1, parseInt(Astro.url.searchParams.get('page') ?? '1', 10));
-
-let allItems: Item[] = [];
-let items: Item[] = [];
-let indexMissing = false;
-
-try {
-  const index: LibraryIndex = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8'));
-  if (isSearch) {
-    const qLower = q.toLowerCase();
-    allItems = index.entries
-      .filter(e => e.name.toLowerCase().includes(qLower))
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-      });
-  } else {
-    allItems = index.entries
-      .filter(e => path.dirname(e.path) === safePath)
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-      });
+// Build progress map: file_path -> percent
+const recentProgress = getRecentProgress(1000);
+const progressByFile: Record<string, number> = {};
+for (const r of recentProgress) {
+  if (r.duration_sec > 0) {
+    progressByFile[r.file_path] = Math.round((r.position_sec / r.duration_sec) * 100);
   }
-} catch {
-  indexMissing = true;
 }
 
-items = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+// Build course list with computed overall progress
+const allCourses = Object.entries(coursesMap).map(([coursePath, meta]) => {
+  const files = meta.files ?? [];
+  const watchedCount = files.filter(f => (progressByFile[f.path] ?? 0) >= 95).length;
+  const overallPct = files.length > 0 ? Math.round((watchedCount / files.length) * 100) : 0;
+  const hasPoster = fs.existsSync(path.join(coursePath, 'poster.png'));
+  return {
+    coursePath,
+    title: meta.title,
+    publisher: meta.publisher,
+    fileCount: files.length,
+    watchedCount,
+    overallPct,
+    isBookmarked: bookmarkPaths.has(coursePath),
+    posterSrc: hasPoster ? `/api/poster${coursePath}` : null,
+  };
+});
 
-const totalPages = Math.ceil(allItems.length / PAGE_SIZE);
-const browseBase = isSearch
-  ? `/browse?q=${encodeURIComponent(q)}`
-  : `/browse?path=${encodeURIComponent(safePath)}`;
+// Collect sorted unique publishers
+const publishers = [...new Set(allCourses.map(c => c.publisher))].sort((a, b) =>
+  a.localeCompare(b, undefined, { sensitivity: 'base' })
+);
 
-// Build breadcrumb relative to LIBRARY_ROOT
-const relative = path.relative(LIBRARY_ROOT, safePath);
-const relParts = relative ? relative.split(path.sep) : [];
-const breadcrumbs = relParts.map((part, i) => ({
-  label: part,
-  path: path.join(LIBRARY_ROOT, ...relParts.slice(0, i + 1)),
-}));
-const isAtRoot = safePath === LIBRARY_ROOT;
+// Apply filters
+let filtered = allCourses;
+if (publisherFilter) {
+  filtered = filtered.filter(c => c.publisher === publisherFilter);
+}
+if (q) {
+  const qLower = q.toLowerCase();
+  filtered = filtered.filter(
+    c => c.title.toLowerCase().includes(qLower) || c.publisher.toLowerCase().includes(qLower)
+  );
+}
+filtered = filtered.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+
+const PAGE_SIZE = 48;
+const page = Math.max(1, parseInt(Astro.url.searchParams.get('page') ?? '1', 10));
+const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+// Build base URL for pagination links (preserves q and publisher params)
+const paginationBase = [
+  q ? `q=${encodeURIComponent(q)}` : '',
+  publisherFilter ? `publisher=${encodeURIComponent(publisherFilter)}` : '',
+].filter(Boolean).join('&');
+const pageLink = (n: number) => `/browse?${paginationBase ? paginationBase + '&' : ''}page=${n}`;
+
+const isLibraryEmpty = allCourses.length === 0;
 ---
 
-<Layout title={isSearch ? `Search: ${q}` : isAtRoot ? 'Library' : `Browse: ${path.basename(safePath)}`}>
+<Layout title={q ? `Search: ${q}` : publisherFilter ? publisherFilter : 'Library'}>
   <div class="page-header">
-    <nav class="breadcrumb">
-      <a href="/browse" class="breadcrumb-item">Library</a>
-      {!isSearch && breadcrumbs.map((crumb, i) => (
-        <>
-          <span class="breadcrumb-sep">›</span>
-          {i < breadcrumbs.length - 1
-            ? <a href={`/browse?path=${encodeURIComponent(crumb.path)}`} class="breadcrumb-item">{crumb.label}</a>
-            : <span class="breadcrumb-item breadcrumb-current">{crumb.label}</span>
-          }
-        </>
-      ))}
-    </nav>
     <form class="search-form" action="/browse" method="get">
-      <input class="search-input" type="search" name="q" value={q} placeholder="Search library…" autocomplete="off" />
-      {!isSearch && <input type="hidden" name="path" value={safePath} />}
+      <input
+        class="search-input"
+        type="search"
+        name="q"
+        value={q}
+        placeholder="Search courses…"
+        autocomplete="off"
+      />
+      {publisherFilter && <input type="hidden" name="publisher" value={publisherFilter} />}
     </form>
   </div>
 
-  {indexMissing && (
-    <p class="search-result-count">Library not scanned yet. Go to <a href="/settings">Settings</a> to scan.</p>
-  )}
-  {isSearch && !indexMissing && (
+  {isLibraryEmpty && (
     <p class="search-result-count">
-      {allItems.length === 0 ? `No results for "${q}"` : `${allItems.length} result${allItems.length === 1 ? '' : 's'} for "${q}"`}
+      Library is empty. Go to <a href="/settings">Settings</a> to scan your library.
     </p>
   )}
 
-  <FileList items={items} currentPath={safePath} libraryRoot={LIBRARY_ROOT} page={page} totalPages={totalPages} browseBase={browseBase} isSearch={isSearch} />
+  {!isLibraryEmpty && (
+    <div class="browse-filters">
+      <a class={`filter-chip ${!publisherFilter ? 'filter-chip-active' : ''}`} href={q ? `/browse?q=${encodeURIComponent(q)}` : '/browse'}>All</a>
+      {publishers.map(p => (
+        <a
+          class={`filter-chip ${publisherFilter === p ? 'filter-chip-active' : ''}`}
+          href={q ? `/browse?publisher=${encodeURIComponent(p)}&q=${encodeURIComponent(q)}` : `/browse?publisher=${encodeURIComponent(p)}`}
+        >{p}</a>
+      ))}
+    </div>
+  )}
+
+  {!isLibraryEmpty && (
+    <p class="search-result-count">
+      {filtered.length === 0
+        ? (q ? `No results for "${q}"` : 'No courses found.')
+        : `${filtered.length} course${filtered.length === 1 ? '' : 's'}${q ? ` for "${q}"` : ''}${totalPages > 1 ? ` — page ${page} of ${totalPages}` : ''}`}
+    </p>
+  )}
+
+  <div class="browse-grid">
+    {paged.map(course => (
+      <div class="browse-card-wrapper">
+        <a class="browse-card" href={`/course?path=${encodeURIComponent(course.coursePath)}`}>
+          <div class="browse-card-media">
+            {course.posterSrc
+              ? <img src={course.posterSrc} alt="" class="browse-card-img" loading="lazy" />
+              : <span class="browse-card-placeholder">♟</span>
+            }
+            {course.overallPct > 0 && (
+              <div class="browse-card-progress">
+                <div class="browse-card-progress-fill" style={`width:${course.overallPct}%`}></div>
+              </div>
+            )}
+          </div>
+          <div class="browse-card-info">
+            <span class="browse-card-name" title={course.title}>{course.title}</span>
+            <span class="browse-card-meta">{course.publisher}</span>
+            {course.fileCount > 0 && (
+              <span class="browse-card-meta">
+                {course.watchedCount}/{course.fileCount} videos
+                {course.overallPct >= 100 && <span class="browse-card-done"> ✓</span>}
+              </span>
+            )}
+          </div>
+        </a>
+        <button
+          class={`browse-card-star ${course.isBookmarked ? 'bookmarked' : ''}`}
+          data-path={course.coursePath}
+          data-label={course.title}
+          data-bookmarked={course.isBookmarked ? 'true' : 'false'}
+          title={course.isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+        >
+          {course.isBookmarked ? '★' : '☆'}
+        </button>
+      </div>
+    ))}
+  </div>
+
+  {totalPages > 1 && (
+    <nav class="pagination">
+      {page > 1
+        ? <a class="pagination-btn" href={pageLink(page - 1)}>← Prev</a>
+        : <span class="pagination-btn pagination-btn-disabled">← Prev</span>
+      }
+      <span class="pagination-info">Page {page} of {totalPages}</span>
+      {page < totalPages
+        ? <a class="pagination-btn" href={pageLink(page + 1)}>Next →</a>
+        : <span class="pagination-btn pagination-btn-disabled">Next →</span>
+      }
+    </nav>
+  )}
 </Layout>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.browse-card-star').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.path!;
+      const label = btn.dataset.label!;
+      const isBookmarked = btn.dataset.bookmarked === 'true';
+
+      if (isBookmarked) {
+        await fetch(`/api/bookmarks?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+        btn.textContent = '☆';
+        btn.dataset.bookmarked = 'false';
+        btn.classList.remove('bookmarked');
+        btn.title = 'Add bookmark';
+      } else {
+        await fetch('/api/bookmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: p, label }),
+        });
+        btn.textContent = '★';
+        btn.dataset.bookmarked = 'true';
+        btn.classList.add('bookmarked');
+        btn.title = 'Remove bookmark';
+      }
+    });
+  });
+</script>
