@@ -1,0 +1,135 @@
+---
+import Layout from '../components/Layout.astro';
+import fs from 'node:fs';
+import path from 'node:path';
+import { LIBRARY_ROOT, getCourseMetadata, getBookmarks, getProgress } from '../lib/db';
+
+const coursePath = Astro.url.searchParams.get('path') ?? '';
+
+// Security: must be inside library root
+const resolved = path.resolve(coursePath);
+if (!resolved.startsWith(LIBRARY_ROOT) || !coursePath) {
+  return Astro.redirect('/browse');
+}
+
+const meta = getCourseMetadata(resolved);
+if (!meta) {
+  return Astro.redirect('/browse');
+}
+
+const files = meta.files ?? [];
+const bookmarkPaths = new Set(getBookmarks().map(b => b.path));
+const isBookmarked = bookmarkPaths.has(resolved);
+
+const hasPoster = fs.existsSync(path.join(resolved, 'poster.png'));
+const posterSrc = hasPoster ? `/api/poster${resolved}` : null;
+
+const THUMBS_ROOT = path.resolve(process.cwd(), 'thumbs');
+const thumbSrc = (filePath: string) => {
+  const rel = path.relative(LIBRARY_ROOT, filePath);
+  const thumbAbs = path.join(THUMBS_ROOT, rel.replace(/\.[^.]+$/, '.jpg'));
+  return fs.existsSync(thumbAbs) ? `/api/thumb/${rel.replace(/\.[^.]+$/, '')}` : null;
+};
+
+// Progress for each file
+const fileData = files.map(f => {
+  const prog = getProgress(f.path);
+  const percent = prog && prog.duration_sec > 0
+    ? Math.round((prog.position_sec / prog.duration_sec) * 100)
+    : 0;
+  const displayName = path.basename(f.name, path.extname(f.name));
+  return { ...f, percent, displayName, thumb: thumbSrc(f.path) };
+});
+
+const watchedCount = fileData.filter(f => f.percent >= 95).length;
+---
+
+<Layout title={meta.title}>
+  <a class="back-link" id="back-link" href="/browse">← Back</a>
+  <div class="course-header">
+    <div class="course-header-inner">
+      <div class="course-poster-wrap">
+        {posterSrc
+          ? <img src={posterSrc} alt="" class="course-poster" />
+          : <span class="course-poster-placeholder">♟</span>
+        }
+      </div>
+      <div class="course-header-info">
+        <p class="course-publisher">{meta.publisher}</p>
+        <h1 class="course-title">{meta.title}</h1>
+        {files.length > 0 && (
+          <p class="course-stats">{watchedCount}/{files.length} videos watched</p>
+        )}
+        <button
+          id="bookmark-btn"
+          class={`btn-bookmark ${isBookmarked ? 'bookmarked' : ''}`}
+          data-path={resolved}
+          data-label={meta.title}
+          data-bookmarked={isBookmarked ? 'true' : 'false'}
+        >
+          {isBookmarked ? '★ Bookmarked' : '☆ Bookmark'}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {files.length === 0 && (
+    <p class="search-result-count">No videos found for this course. Try re-scanning the library.</p>
+  )}
+
+  <div class="course-file-list">
+    {fileData.map((f, i) => (
+      <a class="course-file-row" href={`/watch?path=${encodeURIComponent(f.path)}`}>
+        <div class="course-file-thumb">
+          {f.thumb
+            ? <img src={f.thumb} alt="" class="course-file-thumb-img" loading="lazy" />
+            : <span class="course-file-thumb-placeholder">▶</span>
+          }
+          {f.percent > 0 && (
+            <div class="course-file-progress">
+              <div class="course-file-progress-fill" style={`width:${f.percent}%`}></div>
+            </div>
+          )}
+        </div>
+        <div class="course-file-info">
+          <span class="course-file-index">{String(i + 1).padStart(2, '0')}</span>
+          <span class="course-file-name">{f.displayName}</span>
+        </div>
+        <div class="course-file-badge">
+          {f.percent >= 95 && <span class="badge badge-done">✓</span>}
+          {f.percent > 0 && f.percent < 95 && <span class="badge badge-pct">{f.percent}%</span>}
+        </div>
+      </a>
+    ))}
+  </div>
+</Layout>
+
+<script>
+  const backLink = document.getElementById('back-link') as HTMLAnchorElement;
+  if (document.referrer && new URL(document.referrer).pathname === '/browse') {
+    backLink.addEventListener('click', (e) => { e.preventDefault(); history.back(); });
+  }
+
+  const btn = document.getElementById('bookmark-btn') as HTMLButtonElement;
+  btn?.addEventListener('click', async () => {
+    const p = btn.dataset.path!;
+    const label = btn.dataset.label!;
+    const isBookmarked = btn.dataset.bookmarked === 'true';
+
+    if (isBookmarked) {
+      await fetch(`/api/bookmarks?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+      btn.textContent = '☆ Bookmark';
+      btn.dataset.bookmarked = 'false';
+      btn.classList.remove('bookmarked');
+    } else {
+      await fetch('/api/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: p, label }),
+      });
+      btn.textContent = '★ Bookmarked';
+      btn.dataset.bookmarked = 'true';
+      btn.classList.add('bookmarked');
+    }
+  });
+</script>
