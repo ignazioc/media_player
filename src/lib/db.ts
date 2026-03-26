@@ -37,6 +37,10 @@ export interface CourseMetadata {
   tags?: string[];      // e.g. ["openings", "endgames"]
   description?: string;
   files?: CourseFile[]; // video files in the course, populated by scan
+  source_url?: string;  // URL to the course page on the provider's website
+  cover_image_url?: string; // Remote cover image URL fetched from provider
+  duration?: string;    // Human-readable duration string from provider
+  scraped_at?: number;  // Unix timestamp of last successful metadata scrape
 }
 
 interface Store {

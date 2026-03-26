@@ -497,6 +497,23 @@ a.pagination-btn:hover { border-color: var(--accent); background: var(--surface2
 .scan-status-ok { color: var(--success); }
 .scan-status-error { color: #ef4444; }
 
+.scrape-results {
+  list-style: none;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scrape-result {
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface2);
+}
+.scrape-result-ok { color: var(--success); }
+.scrape-result-error { color: #ef4444; }
+.scrape-result-skipped { color: var(--text-muted); }
+
 /* ---- Browse filters ---- */
 .browse-filters {
   display: flex;

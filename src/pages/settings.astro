@@ -3,6 +3,7 @@ import Layout from '../components/Layout.astro';
 import fs from 'node:fs';
 import { INDEX_PATH } from './api/scan';
 import type { LibraryIndex } from './api/scan';
+import { getAllCourseMetadata } from '../lib/db';
 
 let lastScanned: number | null = null;
 let entryCount: number | null = null;
@@ -11,6 +12,13 @@ try {
   lastScanned = index.scanned_at;
   entryCount = index.entries.length;
 } catch { /* index doesn't exist yet */ }
+
+// Courses eligible for scraping: publisher is a known provider (chessable)
+const KNOWN_PUBLISHERS = new Set(['chessable']);
+const allCourses = getAllCourseMetadata();
+const scrapableCourses = Object.entries(allCourses).filter(([, m]) => KNOWN_PUBLISHERS.has(m.publisher?.toLowerCase() ?? ''));
+const lastScrapedAts = scrapableCourses.map(([, m]) => m.scraped_at ?? 0).filter(t => t > 0);
+const lastScrapedAt = lastScrapedAts.length > 0 ? Math.max(...lastScrapedAts) : null;
 ---
 
 <Layout title="Settings">
@@ -33,6 +41,35 @@ try {
 
     <button class="btn" id="scan-btn">Scan Library</button>
     <p class="scan-status" id="scan-status"></p>
+  </div>
+
+  <div class="settings-section">
+    <h2 class="settings-section-title">Course Metadata</h2>
+    <p class="settings-desc">
+      Fetch metadata (author, duration, cover image) from provider websites. Course URLs are discovered automatically
+      from the provider sitemap. Currently supports: <strong>Chessable</strong>.
+    </p>
+
+    {scrapableCourses.length === 0 && (
+      <p class="settings-meta settings-meta-warn">
+        No courses from supported providers found. Scan the library first.
+      </p>
+    )}
+    {scrapableCourses.length > 0 && (
+      <p class="settings-meta">
+        {scrapableCourses.length} course{scrapableCourses.length === 1 ? '' : 's'} eligible.
+        {lastScrapedAt
+          ? <> Last fetched: <strong>{new Date(lastScrapedAt * 1000).toLocaleString()}</strong></>
+          : <> Not yet fetched.</>
+        }
+      </p>
+    )}
+
+    <button class="btn" id="scrape-btn" disabled={scrapableCourses.length === 0}>
+      Fetch Course Metadata
+    </button>
+    <p class="scan-status" id="scrape-status"></p>
+    <ul class="scrape-results" id="scrape-results"></ul>
   </div>
 </Layout>
 
@@ -70,5 +107,51 @@ try {
     }
 
     btn.disabled = false;
+  });
+
+  // --- Fetch Course Metadata -----------------------------------------------
+  const scrapeBtn = document.getElementById('scrape-btn') as HTMLButtonElement;
+  const scrapeStatus = document.getElementById('scrape-status')!;
+  const scrapeResults = document.getElementById('scrape-results')!;
+
+  scrapeBtn?.addEventListener('click', async () => {
+    scrapeBtn.disabled = true;
+    scrapeBtn.textContent = 'Fetching…';
+    scrapeStatus.textContent = '';
+    scrapeStatus.className = 'scan-status';
+    scrapeResults.innerHTML = '';
+
+    try {
+      const res = await fetch('/api/scrape-metadata', { method: 'POST' });
+      let data: any;
+      const rawText = await res.text();
+      try { data = JSON.parse(rawText); } catch { data = null; }
+
+      if (res.ok && data?.ok) {
+        const results: Array<{ course: string; status: string; message?: string }> = data.results ?? [];
+        const okCount = results.filter(r => r.status === 'ok').length;
+        const errCount = results.filter(r => r.status === 'error').length;
+        scrapeStatus.textContent = `Done — ${okCount} updated, ${errCount} failed.`;
+        scrapeStatus.classList.add(errCount > 0 ? 'scan-status-error' : 'scan-status-ok');
+
+        for (const r of results) {
+          const li = document.createElement('li');
+          li.className = `scrape-result scrape-result-${r.status}`;
+          li.textContent = `${r.status === 'ok' ? '✓' : r.status === 'error' ? '✗' : '–'} ${r.course}${r.message ? ': ' + r.message : ''}`;
+          scrapeResults.appendChild(li);
+        }
+      } else {
+        scrapeStatus.textContent = `Error ${res.status}: ${data?.error ?? rawText ?? '(no response)'}`;
+        scrapeStatus.classList.add('scan-status-error');
+      }
+
+      scrapeBtn.textContent = 'Fetch Course Metadata';
+    } catch (err) {
+      scrapeStatus.textContent = `Request failed: ${err instanceof Error ? err.message : String(err)}`;
+      scrapeStatus.classList.add('scan-status-error');
+      scrapeBtn.textContent = 'Fetch Course Metadata';
+    }
+
+    scrapeBtn.disabled = false;
   });
 </script>
