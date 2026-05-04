@@ -1,0 +1,333 @@
+---
+import Layout from '../components/Layout.astro';
+import fs from 'node:fs';
+import path from 'node:path';
+import { getAllCourseMetadata, getRecentProgress, getBookmarks } from '../lib/db';
+
+// ---------------------------------------------------------------------------
+// Load local chessable courses
+// ---------------------------------------------------------------------------
+const allCourses = getAllCourseMetadata();
+const bookmarkPaths = new Set(getBookmarks().map(b => b.path));
+
+const recentProgress = getRecentProgress(1000);
+const progressByFile: Record<string, number> = {};
+for (const r of recentProgress) {
+  if (r.duration_sec > 0)
+    progressByFile[r.file_path] = Math.round((r.position_sec / r.duration_sec) * 100);
+}
+
+// ---------------------------------------------------------------------------
+// Load catalog for enrichment (bid → cover URL, author)
+// ---------------------------------------------------------------------------
+interface CatalogEntry {
+  bid: number | string;
+  name: string;
+  url?: string;
+  rating?: number | string;
+  rated_by?: number | string;
+  last_photo_update?: string;
+  ownerArray?: { name?: string; chess_title?: string };
+}
+
+let catalog: CatalogEntry[] = [];
+try {
+  const p = path.resolve(process.cwd(), 'public/chessable_courses.json');
+  catalog = JSON.parse(fs.readFileSync(p, 'utf8'));
+} catch { /* catalog stays empty */ }
+
+function normTitle(s: string): string {
+  return s.replace(/\s+-\s+[^-]+$/, '').trim()
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function tokenSet(s: string): Set<string> {
+  return new Set(s.split(' ').filter(w => w.length > 1));
+}
+function matchScore(a: string, b: string): number {
+  const sa = tokenSet(normTitle(a));
+  const sb = tokenSet(normTitle(b));
+  const shared = [...sa].filter(w => sb.has(w)).length;
+  const union = new Set([...sa, ...sb]).size;
+  return union === 0 ? 0 : shared / union;
+}
+function findCatalogEntry(title: string): CatalogEntry | null {
+  if (catalog.length === 0) return null;
+  let best: CatalogEntry | null = null;
+  let bestScore = 0;
+  for (const e of catalog) {
+    const s = matchScore(title, e.name);
+    if (s > bestScore) { bestScore = s; best = e; }
+  }
+  return bestScore >= 0.5 ? best : null;
+}
+
+function authorFromTitle(title: string): string {
+  // Extract "IM Thomas Willemze" from "Course Name - IM Thomas Willemze"
+  const m = title.match(/\s+-\s+([^-]+)$/);
+  return m ? m[1].trim() : '';
+}
+
+// ---------------------------------------------------------------------------
+// Build the course list to pass to client
+// ---------------------------------------------------------------------------
+interface CourseItem {
+  coursePath: string;
+  title: string;
+  displayTitle: string;   // title without author suffix
+  author: string;
+  fileCount: number;
+  watchedCount: number;
+  overallPct: number;
+  isBookmarked: boolean;
+  coverUrl: string | null;
+  rating: number | null;
+  ratedBy: number | null;
+  localUrl: string;
+}
+
+const items: CourseItem[] = Object.entries(allCourses)
+  .filter(([, meta]) => meta.publisher === 'chessable')
+  .map(([coursePath, meta]) => {
+    const files = meta.files ?? [];
+    const watchedCount = files.filter(f => (progressByFile[f.path] ?? 0) >= 95).length;
+    const overallPct = files.length > 0 ? Math.round((watchedCount / files.length) * 100) : 0;
+
+    const hasPoster = fs.existsSync(path.join(coursePath, 'poster.png'));
+
+    // Cover: prefer local poster, then DB cover_image_url, then catalog-derived URL
+    let coverUrl: string | null = hasPoster ? `/api/poster${coursePath}` : (meta.cover_image_url ?? null);
+
+    const catalogEntry = findCatalogEntry(meta.title);
+
+    if (!coverUrl && catalogEntry) {
+      const ts = catalogEntry.last_photo_update ?? '0';
+      coverUrl = `https://www.chessable.com/img/books/book_${catalogEntry.bid}_200.jpg?t=${ts}`;
+    }
+
+    // Author: from catalog ownerArray, else parsed from folder title
+    let author = '';
+    if (catalogEntry?.ownerArray?.name) {
+      const t = catalogEntry.ownerArray.chess_title?.toUpperCase();
+      author = t ? `${t} ${catalogEntry.ownerArray.name}` : catalogEntry.ownerArray.name;
+    } else {
+      author = authorFromTitle(meta.title);
+    }
+
+    // Display title: strip author suffix
+    const displayTitle = meta.title.replace(/\s+-\s+[^-]+$/, '').trim();
+
+    const rating = meta.rating != null ? Number(meta.rating) : (catalogEntry?.rating != null ? Number(catalogEntry.rating) : null);
+    const ratedBy = meta.rated_by != null ? Number(meta.rated_by) : (catalogEntry?.rated_by != null ? Number(catalogEntry.rated_by) : null);
+
+    return {
+      coursePath,
+      title: meta.title,
+      displayTitle,
+      author,
+      fileCount: files.length,
+      watchedCount,
+      overallPct,
+      isBookmarked: bookmarkPaths.has(coursePath),
+      coverUrl,
+      rating: isNaN(rating as number) ? null : rating,
+      ratedBy: isNaN(ratedBy as number) ? null : ratedBy,
+      localUrl: `/course?path=${encodeURIComponent(coursePath)}`,
+    };
+  });
+
+// Authors for the dropdown (only from courses we actually have)
+const authors = [...new Set(items.map(c => c.author).filter(Boolean))]
+  .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+const itemsJson = JSON.stringify(items);
+---
+
+<Layout title="Chessable">
+  <div class="ch-toolbar">
+    <input
+      id="ch-search"
+      class="search-input ch-search"
+      type="search"
+      placeholder="Search courses…"
+      autocomplete="off"
+    />
+
+    <select id="ch-author" class="ch-select">
+      <option value="">All authors</option>
+      {authors.map(a => <option value={a}>{a}</option>)}
+    </select>
+
+    <div class="ch-sort-group">
+      <span class="ch-sort-label">Sort:</span>
+      <button class="ch-sort-btn active" data-sort="title">Title</button>
+      <button class="ch-sort-btn" data-sort="rating">Rating</button>
+      <button class="ch-sort-btn" data-sort="author">Author</button>
+    </div>
+  </div>
+
+  <p id="ch-count" class="search-result-count"></p>
+
+  <div id="ch-grid" class="browse-grid"></div>
+
+  <nav id="ch-pagination" class="pagination" style="display:none"></nav>
+</Layout>
+
+<script define:vars={{ itemsJson }}>
+  const items = JSON.parse(itemsJson);
+  const PAGE_SIZE = 48;
+  let currentSort = 'title';
+  let currentPage = 1;
+
+  const searchEl = document.getElementById('ch-search');
+  const authorEl = document.getElementById('ch-author');
+  const gridEl = document.getElementById('ch-grid');
+  const countEl = document.getElementById('ch-count');
+  const paginationEl = document.getElementById('ch-pagination');
+  const sortBtns = document.querySelectorAll('.ch-sort-btn');
+
+  function filtered() {
+    const q = searchEl.value.trim().toLowerCase();
+    const author = authorEl.value;
+    return items.filter(c => {
+      if (q && !c.displayTitle.toLowerCase().includes(q) && !c.title.toLowerCase().includes(q)) return false;
+      if (author && c.author !== author) return false;
+      return true;
+    });
+  }
+
+  function sorted(list) {
+    return [...list].sort((a, b) => {
+      if (currentSort === 'rating') {
+        const ra = a.rating ?? -1;
+        const rb = b.rating ?? -1;
+        if (rb !== ra) return rb - ra;
+        return a.displayTitle.localeCompare(b.displayTitle, undefined, { sensitivity: 'base' });
+      }
+      if (currentSort === 'author') {
+        const diff = (a.author || '￿').localeCompare(b.author || '￿', undefined, { sensitivity: 'base' });
+        if (diff !== 0) return diff;
+        return a.displayTitle.localeCompare(b.displayTitle, undefined, { sensitivity: 'base' });
+      }
+      return a.displayTitle.localeCompare(b.displayTitle, undefined, { sensitivity: 'base' });
+    });
+  }
+
+  function cardHtml(c) {
+    const pct = c.overallPct;
+    const progressBar = pct > 0 ? `
+      <div class="browse-card-progress">
+        <div class="browse-card-progress-fill" style="width:${pct}%"></div>
+      </div>` : '';
+
+    const imgHtml = c.coverUrl
+      ? `<img src="${c.coverUrl}" alt="" class="browse-card-img" loading="lazy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+         <span class="browse-card-placeholder" style="display:none">♟</span>`
+      : `<span class="browse-card-placeholder">♟</span>`;
+
+    const ratingHtml = c.rating != null
+      ? `<span class="browse-card-rating" title="${c.ratedBy} rating${c.ratedBy === 1 ? '' : 's'}">★ ${c.rating.toFixed(1)}</span>`
+      : '';
+
+    const videosMeta = c.fileCount > 0
+      ? `<span class="browse-card-meta">${c.watchedCount}/${c.fileCount} videos${pct >= 100 ? ' <span class="browse-card-done">✓</span>' : ''}</span>`
+      : '';
+
+    return `
+      <div class="browse-card-wrapper">
+        <a class="browse-card" href="${c.localUrl}">
+          <div class="browse-card-media">
+            ${imgHtml}
+            ${progressBar}
+          </div>
+          <div class="browse-card-info">
+            <span class="browse-card-name" title="${c.displayTitle.replace(/"/g, '&quot;')}">${c.displayTitle}</span>
+            ${c.author ? `<span class="browse-card-meta">${c.author}</span>` : ''}
+            ${videosMeta}
+            ${ratingHtml}
+          </div>
+        </a>
+        <button
+          class="browse-card-star${c.isBookmarked ? ' bookmarked' : ''}"
+          data-path="${c.coursePath}"
+          data-label="${c.displayTitle.replace(/"/g, '&quot;')}"
+          data-bookmarked="${c.isBookmarked}"
+          title="${c.isBookmarked ? 'Remove bookmark' : 'Add bookmark'}"
+        >${c.isBookmarked ? '★' : '☆'}</button>
+      </div>`;
+  }
+
+  function render() {
+    const list = sorted(filtered());
+    const total = list.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    const page = list.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+    countEl.textContent = `${total} course${total === 1 ? '' : 's'}` +
+      (totalPages > 1 ? ` — page ${currentPage} of ${totalPages}` : '');
+
+    gridEl.innerHTML = page.map(cardHtml).join('');
+
+    // Wire up bookmark buttons
+    gridEl.querySelectorAll('.browse-card-star').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const p = btn.dataset.path;
+        const label = btn.dataset.label;
+        const isBookmarked = btn.dataset.bookmarked === 'true';
+        if (isBookmarked) {
+          await fetch(`/api/bookmarks?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+          btn.textContent = '☆';
+          btn.dataset.bookmarked = 'false';
+          btn.classList.remove('bookmarked');
+          btn.title = 'Add bookmark';
+        } else {
+          await fetch('/api/bookmarks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: p, label }),
+          });
+          btn.textContent = '★';
+          btn.dataset.bookmarked = 'true';
+          btn.classList.add('bookmarked');
+          btn.title = 'Remove bookmark';
+        }
+        // Keep items array in sync so re-renders are correct
+        const item = items.find(c => c.coursePath === p);
+        if (item) item.isBookmarked = !isBookmarked;
+      });
+    });
+
+    if (totalPages > 1) {
+      paginationEl.style.display = '';
+      paginationEl.innerHTML = `
+        ${currentPage <= 1
+          ? `<span class="pagination-btn pagination-btn-disabled">← Prev</span>`
+          : `<button class="pagination-btn" id="ch-prev">← Prev</button>`}
+        <span class="pagination-info">Page ${currentPage} of ${totalPages}</span>
+        ${currentPage >= totalPages
+          ? `<span class="pagination-btn pagination-btn-disabled">Next →</span>`
+          : `<button class="pagination-btn" id="ch-next">Next →</button>`}
+      `;
+      document.getElementById('ch-prev')?.addEventListener('click', () => { currentPage--; render(); window.scrollTo(0, 0); });
+      document.getElementById('ch-next')?.addEventListener('click', () => { currentPage++; render(); window.scrollTo(0, 0); });
+    } else {
+      paginationEl.style.display = 'none';
+    }
+  }
+
+  searchEl.addEventListener('input', () => { currentPage = 1; render(); });
+  authorEl.addEventListener('change', () => { currentPage = 1; render(); });
+  sortBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentSort = btn.dataset.sort;
+      sortBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPage = 1;
+      render();
+    });
+  });
+
+  render();
+</script>

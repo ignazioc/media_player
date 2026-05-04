@@ -35,6 +35,8 @@ const allCourses = Object.entries(coursesMap).map(([coursePath, meta]) => {
     overallPct,
     isBookmarked: bookmarkPaths.has(coursePath),
     posterSrc: hasPoster ? `/api/poster${coursePath}` : null,
+    rating: meta.rating,
+    ratedBy: meta.rated_by,
   };
 });
 
@@ -134,6 +136,11 @@ const isLibraryEmpty = allCourses.length === 0;
               <span class="browse-card-meta">
                 {course.watchedCount}/{course.fileCount} videos
                 {course.overallPct >= 100 && <span class="browse-card-done"> ✓</span>}
+              </span>
+            )}
+            {course.rating !== undefined && (
+              <span class="browse-card-rating" title={`${course.ratedBy} rating${course.ratedBy === 1 ? '' : 's'}`}>
+                ★ {course.rating.toFixed(1)}
               </span>
             )}
           </div>

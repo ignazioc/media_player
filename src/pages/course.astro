@@ -60,6 +60,12 @@ const watchedCount = fileData.filter(f => f.percent >= 95).length;
         {files.length > 0 && (
           <p class="course-stats">{watchedCount}/{files.length} videos watched</p>
         )}
+        {meta.rating !== undefined && (
+          <p class="course-rating">
+            ★ {Number(meta.rating).toFixed(1)}
+            {meta.rated_by !== undefined && <span class="course-rating-count">({meta.rated_by} rating{meta.rated_by === 1 ? '' : 's'})</span>}
+          </p>
+        )}
         <button
           id="bookmark-btn"
           class={`btn-bookmark ${isBookmarked ? 'bookmarked' : ''}`}

@@ -44,6 +44,7 @@ async function getSitemapUrls(): Promise<string[]> {
     .map(m => m[0]);
 
   sitemapCache = urls;
+  console.log(`Fetched ${urls.length} course URLs from sitemap`);
   return urls;
 }
 

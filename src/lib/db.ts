@@ -41,6 +41,8 @@ export interface CourseMetadata {
   cover_image_url?: string; // Remote cover image URL fetched from provider
   duration?: string;    // Human-readable duration string from provider
   scraped_at?: number;  // Unix timestamp of last successful metadata scrape
+  rating?: number;      // Chessable average rating (0–5)
+  rated_by?: number;    // Number of raters on Chessable
 }
 
 interface Store {
